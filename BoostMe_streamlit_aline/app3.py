@@ -340,6 +340,7 @@ videos = videos.merge(
     how="left"
 ).rename(columns={"name": "categorie"})
 
+
 chaines_for_merge = chaines.rename(columns={"title": "chaine"}) if "title" in chaines.columns else chaines.copy()
 videos = videos.merge(
     chaines_for_merge[["id", "chaine", "country", "subscribers", "engagement_rate_pct", "nb_videos"]],
