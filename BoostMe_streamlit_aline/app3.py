@@ -1,10 +1,10 @@
 import base64
 from pathlib import Path
+from urllib.parse import quote
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-
 
 # =============================
 # CONFIG
@@ -40,22 +40,20 @@ WALLPAPER_PATH = BASE_DIR / "wallpaper.png"
 # HELPERS
 # =============================
 def img_to_base64(path: Path) -> str:
-    """Encode an image file as base64 for CSS background usage."""
     if not path.exists():
         return ""
-    data = path.read_bytes()
-    return base64.b64encode(data).decode("utf-8")
+    return base64.b64encode(path.read_bytes()).decode("utf-8")
 
 
 def inject_css():
-    # Wallpaper en background (si présent)
+    # ---- wallpaper
     wp_b64 = img_to_base64(WALLPAPER_PATH)
     if wp_b64:
-        # png -> data uri
+        # Réglage transparence : baisse 0.88 -> fond plus visible, monte -> plus sombre
         wallpaper_css = f"""
         [data-testid="stAppViewContainer"] {{
             background:
-                linear-gradient(180deg, rgba(15,15,20,0.40) 0%, rgba(15,15,20,0.40) 100%),
+                linear-gradient(180deg, rgba(15,15,20,0.35) 0%, rgba(15,15,20,0.35) 100%),
                 url("data:image/png;base64,{wp_b64}");
             background-size: cover;
             background-position: center;
@@ -69,6 +67,26 @@ def inject_css():
         }}
         """
 
+    # ---- petit filigrane (emoji SVG) en overlay léger
+    svg = """
+    <svg xmlns='http://www.w3.org/2000/svg' width='420' height='240'>
+      <defs>
+        <pattern id='p' width='210' height='120' patternUnits='userSpaceOnUse'>
+          <text x='10' y='40' font-size='26' opacity='0.10'>🚀</text>
+          <text x='70' y='45' font-size='22' opacity='0.10'>❤️</text>
+          <text x='125' y='45' font-size='22' opacity='0.10'>👍</text>
+          <text x='165' y='45' font-size='22' opacity='0.10'>✨</text>
+          <text x='20' y='92' font-size='22' opacity='0.10'>📈</text>
+          <text x='70' y='95' font-size='22' opacity='0.10'>⚡</text>
+          <text x='120' y='95' font-size='22' opacity='0.10'>💬</text>
+          <text x='165' y='95' font-size='22' opacity='0.10'>🔥</text>
+        </pattern>
+      </defs>
+      <rect width='100%' height='100%' fill='url(#p)'/>
+    </svg>
+    """
+    svg_url = "data:image/svg+xml," + quote(svg)
+
     st.markdown(
         f"""
         <style>
@@ -76,15 +94,32 @@ def inject_css():
 
         {wallpaper_css}
 
-        /* Main paddings */
+        /* Filigrane léger en plus */
+        [data-testid="stAppViewContainer"]::before {{
+            content: "";
+            position: fixed;
+            inset: 0;
+            background-image: url("{svg_url}");
+            background-repeat: repeat;
+            background-size: 420px 240px;
+            opacity: 0.20;
+            pointer-events: none;
+            z-index: 0;
+        }}
+
+        /* Mettre le contenu au-dessus */
+        [data-testid="stAppViewContainer"] > .main {{
+            position: relative;
+            z-index: 1;
+        }}
+
         .block-container {{
             padding-top: 1.2rem;
             padding-bottom: 3rem;
         }}
 
-        /* Cards */
         .bm-card {{
-            background: rgba(23,23,36,0.40);
+            background: rgba(23,23,36,0.88);
             border: 1px solid {BOOSTME["stroke"]};
             border-radius: 18px;
             padding: 14px 16px;
@@ -103,7 +138,6 @@ def inject_css():
             margin-bottom: 4px;
         }}
 
-        /* Title styles */
         .bm-title {{
             font-family: "Bungee", system-ui, sans-serif;
             font-size: 2.35rem;
@@ -135,7 +169,6 @@ def inject_css():
             backdrop-filter: blur(6px);
         }}
 
-        /* Plotly container look */
         .stPlotlyChart > div {{
             border-radius: 18px !important;
             border: 1px solid {BOOSTME["stroke"]};
@@ -145,14 +178,12 @@ def inject_css():
             backdrop-filter: blur(6px);
         }}
 
-        /* Sidebar */
         section[data-testid="stSidebar"] {{
             border-right: 1px solid {BOOSTME["stroke"]};
-            background: rgba(15,15,20,0.70);
+            background: rgba(15,15,20,0.72);
             backdrop-filter: blur(8px);
         }}
 
-        /* Inputs rounding */
         .stButton>button {{
             border-radius: 12px;
         }}
@@ -160,14 +191,13 @@ def inject_css():
             border-radius: 12px !important;
         }}
 
-        /* 🔥 Multiselect compact: limite la hauteur de la zone des tags */
+        /* Multiselect compact */
         div[data-baseweb="tag"] {{
             background: {BOOSTME["orange"]} !important;
             border: none !important;
             color: #111 !important;
-            font-weight: 700 !important;
+            font-weight: 800 !important;
         }}
-        /* zone qui contient les tags -> on limite hauteur + scroll */
         div[data-testid="stMultiSelect"] div {{
             max-height: 120px;
             overflow-y: auto;
@@ -191,7 +221,7 @@ def kpi_card(title: str, value: str, accent: str):
 
 
 def show_header():
-    # descend le header pour éviter la barre Streamlit
+    # Descendre pour éviter la barre Streamlit
     st.markdown("<div style='height:22px'></div>", unsafe_allow_html=True)
 
     left, right = st.columns([1, 3], vertical_alignment="center")
@@ -249,25 +279,33 @@ def clean_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def multiselect_with_all(label: str, options: list, default_all: bool = True, key: str = ""):
+def multiselect_with_all(
+    label: str,
+    options: list,
+    key: str,
+    default_all: bool = True,
+    default_values=None
+):
     """
-    Menu déroulant multi-choix, avec boutons 'Tout' / 'Effacer' pour éviter la galère.
-    Visuellement compact grâce au CSS.
+    Dropdown multi-choix (multiselect) + boutons Tout / Effacer.
+    default_values (liste) permet d'imposer une sélection par défaut.
     """
     if not options:
         return []
 
-    col1, col2 = st.sidebar.columns([1, 1])
-    with col1:
+    c1, c2 = st.sidebar.columns([1, 1])
+    with c1:
         if st.button("Tout", key=f"{key}_all"):
             st.session_state[f"{key}_values"] = options
-    with col2:
+    with c2:
         if st.button("Effacer", key=f"{key}_none"):
             st.session_state[f"{key}_values"] = []
 
-    # init state
     if f"{key}_values" not in st.session_state:
-        st.session_state[f"{key}_values"] = options if default_all else []
+        if default_values is not None:
+            st.session_state[f"{key}_values"] = [v for v in default_values if v in options]
+        else:
+            st.session_state[f"{key}_values"] = options if default_all else []
 
     vals = st.sidebar.multiselect(
         label,
@@ -276,72 +314,78 @@ def multiselect_with_all(label: str, options: list, default_all: bool = True, ke
         key=f"{key}_ms",
         placeholder=f"Choisir {label.lower()}…"
     )
-
-    # keep state synced
     st.session_state[f"{key}_values"] = vals
     return vals
 
 
 # =============================
-# START APP
+# START
 # =============================
 inject_css()
-show_header()
 
 cats, chaines, videos = load_data()
 cats = clean_columns(cats)
 chaines = clean_columns(chaines)
 videos = clean_columns(videos)
 
-# -----------------------------
-# Secure columns
-# -----------------------------
-# chaines engagement rate auto
+# =============================
+# SECURE / FIX MERGES
+# =============================
+# Engagement rate (chaines)
 cand = [c for c in chaines.columns if "engagement" in c and "rate" in c]
 if not cand:
     st.error("Je ne trouve aucune colonne 'engagement' + 'rate' dans chaines.")
     st.write("Colonnes chaines :", list(chaines.columns))
     st.stop()
+
 engagement_col = cand[0]
 if engagement_col != "engagement_rate_pct":
     chaines.rename(columns={engagement_col: "engagement_rate_pct"}, inplace=True)
 chaines["engagement_rate_pct"] = pd.to_numeric(chaines["engagement_rate_pct"], errors="coerce")
 
-# videos taux engagement auto
+# Taux engagement (videos)
 eng_cand = [c for c in videos.columns if "taux" in c and "engagement" in c]
 if not eng_cand:
     st.error("Je ne trouve pas la colonne de taux d'engagement dans videos.")
     st.write("Colonnes videos :", list(videos.columns))
     st.stop()
+
 taux_eng_col = eng_cand[0]
 if taux_eng_col != "taux_engagement_pct":
     videos.rename(columns={taux_eng_col: "taux_engagement_pct"}, inplace=True)
 videos["taux_engagement_pct"] = pd.to_numeric(videos["taux_engagement_pct"], errors="coerce")
 
-# -----------------------------
-# Calculated columns
-# -----------------------------
+# Dates
 videos["published_at"] = pd.to_datetime(videos["published_at"], errors="coerce")
 videos["heure_publication"] = videos["published_at"].dt.hour
 videos["jour_semaine_num"] = videos["published_at"].dt.weekday
-jours_map = {0:"Lundi",1:"Mardi",2:"Mercredi",3:"Jeudi",4:"Vendredi",5:"Samedi",6:"Dimanche"}
+jours_map = {0: "Lundi", 1: "Mardi", 2: "Mercredi", 3: "Jeudi", 4: "Vendredi", 5: "Samedi", 6: "Dimanche"}
 videos["jour_semaine"] = videos["jour_semaine_num"].map(jours_map)
-ordre_jours = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"]
+ordre_jours = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
 videos["jour_semaine"] = pd.Categorical(videos["jour_semaine"], categories=ordre_jours, ordered=True)
 videos["annee"] = videos["published_at"].dt.year
+
+# Engagement total
 videos["engagement_total"] = videos.get("likes", 0).fillna(0) + videos.get("comments", 0).fillna(0)
 
-# -----------------------------
-# Joins
-# -----------------------------
+# =============================
+# JOIN CATS
+# =============================
 videos = videos.merge(
     cats[["category_id", "name"]],
     on="category_id",
     how="left"
 ).rename(columns={"name": "categorie"})
 
-
+# =============================
+# JOIN CHAINES (FIX: types + fillna)
+# =============================
 chaines_for_merge = chaines.rename(columns={"title": "chaine"}) if "title" in chaines.columns else chaines.copy()
+
+# ✅ clé : forcer types pour matcher
+videos["channel_id"] = videos["channel_id"].astype(str).str.strip()
+chaines_for_merge["id"] = chaines_for_merge["id"].astype(str).str.strip()
+
 videos = videos.merge(
     chaines_for_merge[["id", "chaine", "country", "subscribers", "engagement_rate_pct", "nb_videos"]],
     left_on="channel_id",
@@ -350,11 +394,19 @@ videos = videos.merge(
     suffixes=("", "_chaine")
 )
 
+# ✅ clé : ne plus perdre 9000 lignes au filtre
+videos["chaine"] = videos["chaine"].fillna("Chaîne inconnue")
+videos["categorie"] = videos["categorie"].fillna("Catégorie inconnue")
+
 # =============================
-# SIDEBAR FILTERS (Dropdown multi + compact)
+# HEADER (après chargement)
+# =============================
+show_header()
+
+# =============================
+# SIDEBAR FILTERS (dropdown multi)
 # =============================
 st.sidebar.markdown("## 🎛️ Filtres")
-
 if LOGO_PATH.exists():
     st.sidebar.image(str(LOGO_PATH), use_container_width=True)
 
@@ -363,10 +415,18 @@ categories_opts = sorted(videos["categorie"].dropna().unique())
 chaines_opts = sorted(videos["chaine"].dropna().unique())
 jours_opts = list(videos["jour_semaine"].cat.categories)
 
-annees = multiselect_with_all("Année", annees_opts, default_all=True, key="annees")
-categories = multiselect_with_all("Catégories", categories_opts, default_all=True, key="categories")
-chaines_sel = multiselect_with_all("Chaînes", chaines_opts, default_all=True, key="chaines")
-jours_sel = multiselect_with_all("Jour de publication", jours_opts, default_all=True, key="jours")
+# ✅ Par défaut : seulement 2024, 2025, 2026
+annees = multiselect_with_all(
+    "Année",
+    annees_opts,
+    key="annees",
+    default_all=False,
+    default_values=[2024, 2025, 2026]
+)
+
+categories = multiselect_with_all("Catégories", categories_opts, key="categories", default_all=True)
+chaines_sel = multiselect_with_all("Chaînes", chaines_opts, key="chaines", default_all=True)
+jours_sel = multiselect_with_all("Jour de publication", jours_opts, key="jours", default_all=True)
 
 heures = st.sidebar.slider("Heure de publication", 0, 23, (0, 23))
 
@@ -382,6 +442,7 @@ df = videos[
 # KPIs
 # =============================
 k1, k2, k3, k4 = st.columns(4)
+
 with k1:
     kpi_card("📹 Vidéos analysées", f"{len(df):,}", BOOSTME["orange"])
 with k2:
@@ -482,9 +543,10 @@ st.plotly_chart(fig_top, use_container_width=True)
 with st.expander("🔎 Explorer les données filtrées"):
     st.dataframe(df, use_container_width=True)
 
-with st.expander("🛠️ Debug (paths)"):
-    st.write("BASE_DIR :", str(BASE_DIR))
-    st.write("DATA_DIR :", str(DATA_DIR))
-    st.write("WALLPAPER exists:", WALLPAPER_PATH.exists())
-    st.write("LOGO exists:", LOGO_PATH.exists())
-    st.write("CSV détectés :", [p.name for p in DATA_DIR.glob("*.csv")] if DATA_DIR.exists() else "DATA_DIR introuvable")
+with st.expander("🛠️ Debug (volumes)"):
+    st.write("Total videos (table):", len(videos))
+    st.write("Après filtres:", len(df))
+    st.write("NaT published_at:", videos["published_at"].isna().sum())
+    st.write("NaN annee:", videos["annee"].isna().sum())
+    st.write("NaN chaine:", videos["chaine"].isna().sum())
+    st.write("NaN categorie:", videos["categorie"].isna().sum())
