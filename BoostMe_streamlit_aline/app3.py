@@ -137,12 +137,14 @@ def show_header():
 # =============================
 @st.cache_data
 def load_data():
-    cats = pd.read_csv("data/cats.csv")
-    chaines = pd.read_csv("data/chaines.csv")
-    videos = pd.read_csv("data/videos.csv", parse_dates=["published_at"])
-    return cats, chaines, videos
+    base_dir = Path(__file__).resolve().parent        # .../BoostMe_streamlit_aline
+    data_dir = base_dir / "data"                      # .../BoostMe_streamlit_aline/data
 
-cats, chaines, videos = load_data()
+    cats = pd.read_csv(data_dir / "cats.csv")
+    chaines = pd.read_csv(data_dir / "chaines.csv")
+    videos = pd.read_csv(data_dir / "videos.csv")
+
+    return cats, chaines, videos
 
 # =============================
 # 2) CLEAN COLUMNS
