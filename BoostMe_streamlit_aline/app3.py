@@ -280,43 +280,28 @@ def clean_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def multiselect_with_all(
-    label: str,
-    options: list,
-    key: str,
-    default_all: bool = True,
-    default_values=None
-):
+def multiselect_simple(label: str, options: list, default_values=None, key=None):
     """
-    Dropdown multi-choix (multiselect) + boutons Tout / Effacer.
-    default_values (liste) permet d'imposer une sélection par défaut.
+    Multiselect simple et robuste.
+    - options : liste d'options
+    - default_values : liste des valeurs sélectionnées par défaut
     """
     if not options:
         return []
 
-    c1, c2 = st.sidebar.columns([1, 1])
-    with c1:
-        if st.button("Tout", key=f"{key}_all"):
-            st.session_state[f"{key}_values"] = options
-    with c2:
-        if st.button("Effacer", key=f"{key}_none"):
-            st.session_state[f"{key}_values"] = []
+    if default_values is None:
+        default_values = options
 
-    if f"{key}_values" not in st.session_state:
-        if default_values is not None:
-            st.session_state[f"{key}_values"] = [v for v in default_values if v in options]
-        else:
-            st.session_state[f"{key}_values"] = options if default_all else []
+    # on garde uniquement les valeurs présentes dans options
+    default_values = [v for v in default_values if v in options]
 
-    vals = st.sidebar.multiselect(
+    return st.sidebar.multiselect(
         label,
         options=options,
-        default=st.session_state[f"{key}_values"],
-        key=f"{key}_ms",
+        default=default_values,
+        key=key,
         placeholder=f"Choisir {label.lower()}…"
     )
-    st.session_state[f"{key}_values"] = vals
-    return vals
 
 
 # =============================
@@ -417,11 +402,12 @@ def page_videos():
     show_header("Laboratoire d’influenceurs")
 
     # =============================
-    # SIDEBAR FILTERS (dropdown multi)
+    # SIDEBAR FILTERS (sans boutons)
     # =============================
-    st.sidebar.markdown("## 🎛️ Filtres")
+
     if LOGO_PATH.exists():
         st.sidebar.image(str(LOGO_PATH), use_container_width=True)
+
 
     annees_opts = sorted(videos["annee"].dropna().unique())
     categories_opts = sorted(videos["categorie"].dropna().unique())
@@ -429,20 +415,37 @@ def page_videos():
     jours_opts = list(videos["jour_semaine"].cat.categories)
 
     # ✅ Par défaut : seulement 2024, 2025, 2026
-    annees = multiselect_with_all(
+    annees = multiselect_simple(
         "Année",
         annees_opts,
-        key="annees",
-        default_all=False,
-        default_values=[2024, 2025, 2026]
+        default_values=[2024, 2025, 2026],
+        key="annees"
     )
 
-    categories = multiselect_with_all("Catégories", categories_opts, key="categories", default_all=True)
-    chaines_sel = multiselect_with_all("Chaînes", chaines_opts, key="chaines", default_all=True)
-    jours_sel = multiselect_with_all("Jour de publication", jours_opts, key="jours", default_all=True)
+    categories = multiselect_simple(
+        "Catégories",
+        categories_opts,
+        default_values=categories_opts,
+        key="categories"
+    )
 
-    heures = st.sidebar.slider("Heure de publication", 0, 23, (0, 23))
+    chaines_sel = multiselect_simple(
+        "Chaînes",
+        chaines_opts,
+        default_values=chaines_opts,
+        key="chaines"
+    )
 
+    jours_sel = multiselect_simple(
+        "Jour de publication",
+        jours_opts,
+        default_values=jours_opts,
+        key="jours"
+    )
+
+    heures = st.sidebar.slider("Heure de publication", 0, 23, (0, 23), key="heures")
+
+    # si l'utilisateur a tout décoché un filtre -> df vide (OK)
     df = videos[
         (videos["annee"].isin(annees)) &
         (videos["categorie"].isin(categories)) &
@@ -450,6 +453,7 @@ def page_videos():
         (videos["jour_semaine"].isin(jours_sel)) &
         (videos["heure_publication"].between(heures[0], heures[1]))
     ].copy()
+
 
     # =============================
     # KPIs
